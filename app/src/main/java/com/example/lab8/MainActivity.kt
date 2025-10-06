@@ -29,16 +29,12 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.navigation.NavDestination.Companion.hierarchy
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
-import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
+import androidx.navigation.toRoute
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.lab8.ui.theme.Lab8Theme
@@ -168,40 +164,46 @@ class LocationDb {
     fun getLocationById(id: Int): Location? = locations.find { it.id == id }
 }
 
-// Navigation destinations using strings
-const val LOGIN_ROUTE = "login"
-const val MAIN_ROUTE = "main"
-const val CHARACTERS_GRAPH = "characters_graph"
-const val CHARACTERS_LIST_ROUTE = "characters_list"
-const val CHARACTER_DETAIL_ROUTE = "character_detail/{characterId}"
-const val LOCATIONS_GRAPH = "locations_graph"
-const val LOCATIONS_LIST_ROUTE = "locations_list"
-const val LOCATION_DETAIL_ROUTE = "location_detail/{locationId}"
-const val PROFILE_ROUTE = "profile"
+@Serializable
+object LoginDestination
+
+@Serializable
+object MainDestination
+
+@Serializable
+object CharactersListDestination
+
+@Serializable
+data class CharacterDetailDestination(val characterId: Int)
+
+@Serializable
+object LocationsListDestination
+
+@Serializable
+data class LocationDetailDestination(val locationId: Int)
+
+@Serializable
+object ProfileDestination
 
 // Bottom Navigation Items
 sealed class BottomNavItem(
-    val route: String,
     val title: String,
     val selectedIcon: androidx.compose.ui.graphics.vector.ImageVector,
     val unselectedIcon: androidx.compose.ui.graphics.vector.ImageVector
 ) {
     data object Characters : BottomNavItem(
-        route = CHARACTERS_GRAPH,
         title = "Characters",
         selectedIcon = Icons.Filled.Person,
         unselectedIcon = Icons.Outlined.Person
     )
 
     data object Locations : BottomNavItem(
-        route = LOCATIONS_GRAPH,
         title = "Locations",
         selectedIcon = Icons.Filled.LocationOn,
         unselectedIcon = Icons.Outlined.LocationOn
     )
 
     data object Profile : BottomNavItem(
-        route = PROFILE_ROUTE,
         title = "Profile",
         selectedIcon = Icons.Filled.Person,
         unselectedIcon = Icons.Outlined.Person
@@ -227,27 +229,25 @@ fun AppNavigation(
     modifier: Modifier = Modifier,
     navController: NavHostController = rememberNavController()
 ) {
-    val context = LocalContext.current
-
     NavHost(
         navController = navController,
-        startDestination = LOGIN_ROUTE,
+        startDestination = LoginDestination,
         modifier = modifier
     ) {
-        composable(LOGIN_ROUTE) {
+        composable<LoginDestination> {
             LoginScreen(
                 onStartClick = {
-                    navController.navigate(MAIN_ROUTE) {
-                        popUpTo(LOGIN_ROUTE) { inclusive = true }
+                    navController.navigate(MainDestination) {
+                        popUpTo<LoginDestination> { inclusive = true }
                     }
                 }
             )
         }
 
-        composable(MAIN_ROUTE) {
+        composable<MainDestination> {
             MainScreen(
                 onLogout = {
-                    navController.navigate(LOGIN_ROUTE) {
+                    navController.navigate(LoginDestination) {
                         popUpTo(0) { inclusive = true }
                     }
                 }
@@ -261,113 +261,120 @@ fun MainScreen(onLogout: () -> Unit) {
     val navController = rememberNavController()
     val context = LocalContext.current
 
-    val bottomNavItems = listOf(
-        BottomNavItem.Characters,
-        BottomNavItem.Locations,
-        BottomNavItem.Profile
-    )
+    var selectedTab by remember { mutableIntStateOf(0) }
 
     Scaffold(
         bottomBar = {
             NavigationBar {
-                val navBackStackEntry by navController.currentBackStackEntryAsState()
-                val currentDestination = navBackStackEntry?.destination
-
-                bottomNavItems.forEach { item ->
-                    NavigationBarItem(
-                        icon = {
-                            Icon(
-                                if (currentDestination?.route?.startsWith(item.route) == true) {
-                                    item.selectedIcon
-                                } else {
-                                    item.unselectedIcon
-                                },
-                                contentDescription = item.title
-                            )
-                        },
-                        label = { Text(item.title) },
-                        selected = currentDestination?.route?.startsWith(item.route) == true,
-                        onClick = {
-                            navController.navigate(item.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
+                NavigationBarItem(
+                    icon = {
+                        Icon(
+                            if (selectedTab == 0) Icons.Filled.Person else Icons.Outlined.Person,
+                            contentDescription = "Characters"
+                        )
+                    },
+                    label = { Text("Characters") },
+                    selected = selectedTab == 0,
+                    onClick = {
+                        selectedTab = 0
+                        navController.navigate(CharactersListDestination) {
+                            popUpTo(CharactersListDestination) { inclusive = true }
+                            launchSingleTop = true
                         }
-                    )
-                }
+                    }
+                )
+
+                NavigationBarItem(
+                    icon = {
+                        Icon(
+                            if (selectedTab == 1) Icons.Filled.LocationOn else Icons.Outlined.LocationOn,
+                            contentDescription = "Locations"
+                        )
+                    },
+                    label = { Text("Locations") },
+                    selected = selectedTab == 1,
+                    onClick = {
+                        selectedTab = 1
+                        navController.navigate(LocationsListDestination) {
+                            popUpTo(LocationsListDestination) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                )
+
+                NavigationBarItem(
+                    icon = {
+                        Icon(
+                            if (selectedTab == 2) Icons.Filled.Person else Icons.Outlined.Person,
+                            contentDescription = "Profile"
+                        )
+                    },
+                    label = { Text("Profile") },
+                    selected = selectedTab == 2,
+                    onClick = {
+                        selectedTab = 2
+                        navController.navigate(ProfileDestination) {
+                            popUpTo(ProfileDestination) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                )
             }
         }
     ) { paddingValues ->
         NavHost(
             navController = navController,
-            startDestination = CHARACTERS_GRAPH,
+            startDestination = CharactersListDestination,
             modifier = Modifier.padding(paddingValues)
         ) {
-            // Characters nested navigation
-            navigation(
-                startDestination = CHARACTERS_LIST_ROUTE,
-                route = CHARACTERS_GRAPH
-            ) {
-                composable(CHARACTERS_LIST_ROUTE) {
-                    CharactersScreen(
-                        onCharacterClick = { characterId ->
-                            navController.navigate("character_detail/$characterId")
-                        },
-                        onBackPressed = {
-                            (context as? Activity)?.finish()
-                        }
-                    )
-                }
-
-                composable(
-                    route = CHARACTER_DETAIL_ROUTE,
-                    arguments = listOf(navArgument("characterId") { type = NavType.IntType })
-                ) { backStackEntry ->
-                    val characterId = backStackEntry.arguments?.getInt("characterId") ?: 0
-                    CharacterDetailScreen(
-                        characterId = characterId,
-                        onBackClick = {
-                            navController.popBackStack()
-                        }
-                    )
-                }
+            // Characters List
+            composable<CharactersListDestination> {
+                CharactersScreen(
+                    onCharacterClick = { characterId ->
+                        navController.navigate(CharacterDetailDestination(characterId))
+                    },
+                    onBackPressed = {
+                        (context as? Activity)?.finish()
+                    }
+                )
             }
 
-            // Locations nested navigation
-            navigation(
-                startDestination = LOCATIONS_LIST_ROUTE,
-                route = LOCATIONS_GRAPH
-            ) {
-                composable(LOCATIONS_LIST_ROUTE) {
-                    LocationsScreen(
-                        onLocationClick = { locationId ->
-                            navController.navigate("location_detail/$locationId")
-                        },
-                        onBackPressed = {
-                            (context as? Activity)?.finish()
-                        }
-                    )
-                }
-
-                composable(
-                    route = LOCATION_DETAIL_ROUTE,
-                    arguments = listOf(navArgument("locationId") { type = NavType.IntType })
-                ) { backStackEntry ->
-                    val locationId = backStackEntry.arguments?.getInt("locationId") ?: 0
-                    LocationDetailScreen(
-                        locationId = locationId,
-                        onBackClick = {
-                            navController.popBackStack()
-                        }
-                    )
-                }
+            // Character Detail
+            composable<CharacterDetailDestination> { backStackEntry ->
+                val args = backStackEntry.toRoute<CharacterDetailDestination>()
+                CharacterDetailScreen(
+                    characterId = args.characterId,
+                    onBackClick = {
+                        navController.popBackStack()
+                    }
+                )
             }
 
-            // Profile screen (no nested navigation needed)
-            composable(PROFILE_ROUTE) {
+            // Locations List
+            composable<LocationsListDestination> {
+                LocationsScreen(
+                    onLocationClick = { locationId ->
+                        navController.navigate(LocationDetailDestination(locationId))
+                    },
+                    onBackPressed = {
+                        (context as? Activity)?.finish()
+                    }
+                )
+            }
+
+            // Location Detail
+            composable<LocationDetailDestination> { backStackEntry ->
+                val args = backStackEntry.toRoute<LocationDetailDestination>()
+                LocationDetailScreen(
+                    locationId = args.locationId,
+                    onBackClick = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+
+            // Profile
+            composable<ProfileDestination> {
                 ProfileScreen(
                     onLogout = onLogout
                 )
@@ -753,7 +760,6 @@ fun ProfileScreen(onLogout: () -> Unit) {
     ) {
         Spacer(modifier = Modifier.height(48.dp))
 
-        // Imagen de perfil - usa un ícono por defecto o agrega tu imagen personal
         Icon(
             imageVector = Icons.Default.Person,
             contentDescription = "Profile Picture",
