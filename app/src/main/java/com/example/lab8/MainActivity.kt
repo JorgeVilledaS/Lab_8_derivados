@@ -27,18 +27,28 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.lab8.ui.theme.Lab8Theme
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
+import kotlin.random.Random
 
 // Data classes
 data class Character(
@@ -58,6 +68,32 @@ data class Location(
     val dimension: String
 )
 
+// UI States
+data class CharactersListState(
+    val isLoading: Boolean = false,
+    val data: List<Character> = emptyList(),
+    val hasError: Boolean = false
+)
+
+data class CharacterDetailState(
+    val isLoading: Boolean = false,
+    val data: Character? = null,
+    val hasError: Boolean = false
+)
+
+data class LocationsListState(
+    val isLoading: Boolean = false,
+    val data: List<Location> = emptyList(),
+    val hasError: Boolean = false
+)
+
+data class LocationDetailState(
+    val isLoading: Boolean = false,
+    val data: Location? = null,
+    val hasError: Boolean = false
+)
+
+// Database classes
 class CharacterDb {
     private val characters = listOf(
         Character(
@@ -116,8 +152,15 @@ class CharacterDb {
         )
     )
 
-    fun getAllCharacters(): List<Character> = characters
-    fun getCharacterById(id: Int): Character? = characters.find { it.id == id }
+    suspend fun getAllCharacters(): List<Character> {
+        delay(4000) // 4 segundos de loading
+        return characters
+    }
+
+    suspend fun getCharacterById(id: Int): Character? {
+        delay(2000) // 2 segundos de loading
+        return characters.find { it.id == id }
+    }
 }
 
 class LocationDb {
@@ -160,10 +203,131 @@ class LocationDb {
         )
     )
 
-    fun getAllLocations(): List<Location> = locations
-    fun getLocationById(id: Int): Location? = locations.find { it.id == id }
+    suspend fun getAllLocations(): List<Location> {
+        delay(4000) // 4 segundos de loading
+        return locations
+    }
+
+    suspend fun getLocationById(id: Int): Location? {
+        delay(2000) // 2 segundos de loading
+        return locations.find { it.id == id }
+    }
 }
 
+// ViewModels
+class CharactersListViewModel : ViewModel() {
+    private val characterDb = CharacterDb()
+    private val _state = MutableStateFlow(CharactersListState())
+    val state: StateFlow<CharactersListState> = _state.asStateFlow()
+
+    init {
+        loadCharacters()
+    }
+
+    fun loadCharacters() {
+        viewModelScope.launch {
+            _state.value = CharactersListState(isLoading = true)
+
+            val characters = characterDb.getAllCharacters()
+            val randomNumber = Random.nextInt(1, 11)
+
+            if (randomNumber % 2 == 0) {
+                // Número par - mostrar datos
+                _state.value = CharactersListState(data = characters)
+            } else {
+                // Número impar - mostrar error
+                _state.value = CharactersListState(hasError = true)
+            }
+        }
+    }
+}
+
+class CharacterDetailViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
+    private val characterDb = CharacterDb()
+    private val _state = MutableStateFlow(CharacterDetailState())
+    val state: StateFlow<CharacterDetailState> = _state.asStateFlow()
+
+    private val characterId: Int = savedStateHandle.get<Int>("characterId") ?: 0
+
+    init {
+        loadCharacter()
+    }
+
+    fun loadCharacter() {
+        viewModelScope.launch {
+            _state.value = CharacterDetailState(isLoading = true)
+
+            val character = characterDb.getCharacterById(characterId)
+            val randomNumber = Random.nextInt(1, 11)
+
+            if (randomNumber % 2 == 0) {
+                // Número par - mostrar datos
+                _state.value = CharacterDetailState(data = character)
+            } else {
+                // Número impar - mostrar error
+                _state.value = CharacterDetailState(hasError = true)
+            }
+        }
+    }
+}
+
+class LocationsListViewModel : ViewModel() {
+    private val locationDb = LocationDb()
+    private val _state = MutableStateFlow(LocationsListState())
+    val state: StateFlow<LocationsListState> = _state.asStateFlow()
+
+    init {
+        loadLocations()
+    }
+
+    fun loadLocations() {
+        viewModelScope.launch {
+            _state.value = LocationsListState(isLoading = true)
+
+            val locations = locationDb.getAllLocations()
+            val randomNumber = Random.nextInt(1, 11)
+
+            if (randomNumber % 2 == 0) {
+                // Número par - mostrar datos
+                _state.value = LocationsListState(data = locations)
+            } else {
+                // Número impar - mostrar error
+                _state.value = LocationsListState(hasError = true)
+            }
+        }
+    }
+}
+
+class LocationDetailViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
+    private val locationDb = LocationDb()
+    private val _state = MutableStateFlow(LocationDetailState())
+    val state: StateFlow<LocationDetailState> = _state.asStateFlow()
+
+    private val locationId: Int = savedStateHandle.get<Int>("locationId") ?: 0
+
+    init {
+        loadLocation()
+    }
+
+    fun loadLocation() {
+        viewModelScope.launch {
+            _state.value = LocationDetailState(isLoading = true)
+
+            val location = locationDb.getLocationById(locationId)
+            val randomNumber = Random.nextInt(1, 11)
+
+            if (randomNumber % 2 == 0) {
+                // Número par - mostrar datos
+                _state.value = LocationDetailState(data = location)
+            } else {
+                // Número impar - mostrar error
+                _state.value = LocationDetailState(hasError = true)
+            }
+        }
+    }
+}
+
+// Serializable destinations
 @Serializable
 object LoginDestination
 
@@ -184,31 +348,6 @@ data class LocationDetailDestination(val locationId: Int)
 
 @Serializable
 object ProfileDestination
-
-// Bottom Navigation Items
-sealed class BottomNavItem(
-    val title: String,
-    val selectedIcon: androidx.compose.ui.graphics.vector.ImageVector,
-    val unselectedIcon: androidx.compose.ui.graphics.vector.ImageVector
-) {
-    data object Characters : BottomNavItem(
-        title = "Characters",
-        selectedIcon = Icons.Filled.Person,
-        unselectedIcon = Icons.Outlined.Person
-    )
-
-    data object Locations : BottomNavItem(
-        title = "Locations",
-        selectedIcon = Icons.Filled.LocationOn,
-        unselectedIcon = Icons.Outlined.LocationOn
-    )
-
-    data object Profile : BottomNavItem(
-        title = "Profile",
-        selectedIcon = Icons.Filled.Person,
-        unselectedIcon = Icons.Outlined.Person
-    )
-}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -260,7 +399,6 @@ fun AppNavigation(
 fun MainScreen(onLogout: () -> Unit) {
     val navController = rememberNavController()
     val context = LocalContext.current
-
     var selectedTab by remember { mutableIntStateOf(0) }
 
     Scaffold(
@@ -327,7 +465,6 @@ fun MainScreen(onLogout: () -> Unit) {
             startDestination = CharactersListDestination,
             modifier = Modifier.padding(paddingValues)
         ) {
-            // Characters List
             composable<CharactersListDestination> {
                 CharactersScreen(
                     onCharacterClick = { characterId ->
@@ -339,7 +476,6 @@ fun MainScreen(onLogout: () -> Unit) {
                 )
             }
 
-            // Character Detail
             composable<CharacterDetailDestination> { backStackEntry ->
                 val args = backStackEntry.toRoute<CharacterDetailDestination>()
                 CharacterDetailScreen(
@@ -350,7 +486,6 @@ fun MainScreen(onLogout: () -> Unit) {
                 )
             }
 
-            // Locations List
             composable<LocationsListDestination> {
                 LocationsScreen(
                     onLocationClick = { locationId ->
@@ -362,7 +497,6 @@ fun MainScreen(onLogout: () -> Unit) {
                 )
             }
 
-            // Location Detail
             composable<LocationDetailDestination> { backStackEntry ->
                 val args = backStackEntry.toRoute<LocationDetailDestination>()
                 LocationDetailScreen(
@@ -373,11 +507,70 @@ fun MainScreen(onLogout: () -> Unit) {
                 )
             }
 
-            // Profile
             composable<ProfileDestination> {
                 ProfileScreen(
                     onLogout = onLogout
                 )
+            }
+        }
+    }
+}
+
+// Loading Screen Component
+@Composable
+fun LoadingScreen() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(48.dp),
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Cargando",
+                style = MaterialTheme.typography.bodyLarge
+            )
+        }
+    }
+}
+
+// Error Screen Component
+@Composable
+fun ErrorScreen(onRetry: () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(32.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Person,
+                contentDescription = "Error",
+                modifier = Modifier.size(80.dp),
+                tint = MaterialTheme.colorScheme.error
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Error al obtener listado de personajes.\nIntenta de nuevo",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            OutlinedButton(
+                onClick = onRetry,
+                modifier = Modifier.fillMaxWidth(0.6f)
+            ) {
+                Text("Reintentar")
             }
         }
     }
@@ -432,10 +625,10 @@ fun LoginScreen(onStartClick: () -> Unit) {
 @Composable
 fun CharactersScreen(
     onCharacterClick: (Int) -> Unit,
-    onBackPressed: () -> Unit
+    onBackPressed: () -> Unit,
+    viewModel: CharactersListViewModel = viewModel()
 ) {
-    val characterDb = remember { CharacterDb() }
-    val characters = remember { characterDb.getAllCharacters() }
+    val state by viewModel.state.collectAsState()
 
     BackHandler {
         onBackPressed()
@@ -452,18 +645,28 @@ fun CharactersScreen(
             )
         }
     ) { paddingValues ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(16.dp)
-        ) {
-            items(characters) { character ->
-                CharacterItem(
-                    character = character,
-                    onClick = { onCharacterClick(character.id) }
-                )
+        when {
+            state.isLoading -> {
+                LoadingScreen()
+            }
+            state.hasError -> {
+                ErrorScreen(onRetry = { viewModel.loadCharacters() })
+            }
+            else -> {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(16.dp)
+                ) {
+                    items(state.data) { character ->
+                        CharacterItem(
+                            character = character,
+                            onClick = { onCharacterClick(character.id) }
+                        )
+                    }
+                }
             }
         }
     }
@@ -533,10 +736,10 @@ fun CharacterItem(
 @Composable
 fun CharacterDetailScreen(
     characterId: Int,
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    viewModel: CharacterDetailViewModel = viewModel()
 ) {
-    val characterDb = remember { CharacterDb() }
-    val character = remember { characterDb.getCharacterById(characterId) }
+    val state by viewModel.state.collectAsState()
 
     Scaffold(
         topBar = {
@@ -558,40 +761,49 @@ fun CharacterDetailScreen(
             )
         }
     ) { paddingValues ->
-        character?.let { char ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
-                        .data(char.image)
-                        .crossfade(true)
-                        .build(),
-                    contentDescription = char.name,
+        when {
+            state.isLoading -> {
+                LoadingScreen()
+            }
+            state.hasError -> {
+                ErrorScreen(onRetry = { viewModel.loadCharacter() })
+            }
+            state.data != null -> {
+                val character = state.data!!
+                Column(
                     modifier = Modifier
-                        .size(150.dp)
-                        .clip(CircleShape),
-                    contentScale = ContentScale.Crop
-                )
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(character.image)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = character.name,
+                        modifier = Modifier
+                            .size(150.dp)
+                            .clip(CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
 
-                Text(
-                    text = char.name,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
+                    Text(
+                        text = character.name,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
 
-                Spacer(modifier = Modifier.height(32.dp))
+                    Spacer(modifier = Modifier.height(32.dp))
 
-                DetailRow(label = "Species:", value = char.species)
-                DetailRow(label = "Status:", value = char.status)
-                DetailRow(label = "Gender:", value = char.gender)
+                    DetailRow(label = "Species:", value = character.species)
+                    DetailRow(label = "Status:", value = character.status)
+                    DetailRow(label = "Gender:", value = character.gender)
+                }
             }
         }
     }
@@ -601,10 +813,10 @@ fun CharacterDetailScreen(
 @Composable
 fun LocationsScreen(
     onLocationClick: (Int) -> Unit,
-    onBackPressed: () -> Unit
+    onBackPressed: () -> Unit,
+    viewModel: LocationsListViewModel = viewModel()
 ) {
-    val locationDb = remember { LocationDb() }
-    val locations = remember { locationDb.getAllLocations() }
+    val state by viewModel.state.collectAsState()
 
     BackHandler {
         onBackPressed()
@@ -621,18 +833,28 @@ fun LocationsScreen(
             )
         }
     ) { paddingValues ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(16.dp)
-        ) {
-            items(locations) { location ->
-                LocationItem(
-                    location = location,
-                    onClick = { onLocationClick(location.id) }
-                )
+        when {
+            state.isLoading -> {
+                LoadingScreen()
+            }
+            state.hasError -> {
+                ErrorScreen(onRetry = { viewModel.loadLocations() })
+            }
+            else -> {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(16.dp)
+                ) {
+                    items(state.data) { location ->
+                        LocationItem(
+                            location = location,
+                            onClick = { onLocationClick(location.id) }
+                        )
+                    }
+                }
             }
         }
     }
@@ -691,10 +913,10 @@ fun LocationItem(
 @Composable
 fun LocationDetailScreen(
     locationId: Int,
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    viewModel: LocationDetailViewModel = viewModel()
 ) {
-    val locationDb = remember { LocationDb() }
-    val location = remember { locationDb.getLocationById(locationId) }
+    val state by viewModel.state.collectAsState()
 
     Scaffold(
         topBar = {
@@ -716,35 +938,44 @@ fun LocationDetailScreen(
             )
         }
     ) { paddingValues ->
-        location?.let { loc ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Icon(
-                    imageVector = Icons.Default.LocationOn,
-                    contentDescription = "Location",
-                    modifier = Modifier.size(120.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
+        when {
+            state.isLoading -> {
+                LoadingScreen()
+            }
+            state.hasError -> {
+                ErrorScreen(onRetry = { viewModel.loadLocation() })
+            }
+            state.data != null -> {
+                val location = state.data!!
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.LocationOn,
+                        contentDescription = "Location",
+                        modifier = Modifier.size(120.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
 
-                Text(
-                    text = loc.name,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
+                    Text(
+                        text = location.name,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
 
-                Spacer(modifier = Modifier.height(32.dp))
+                    Spacer(modifier = Modifier.height(32.dp))
 
-                DetailRow(label = "ID:", value = loc.id.toString())
-                DetailRow(label = "Type:", value = loc.type)
-                DetailRow(label = "Dimensions:", value = loc.dimension)
+                    DetailRow(label = "ID:", value = location.id.toString())
+                    DetailRow(label = "Type:", value = location.type)
+                    DetailRow(label = "Dimensions:", value = location.dimension)
+                }
             }
         }
     }
