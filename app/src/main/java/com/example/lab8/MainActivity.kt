@@ -46,6 +46,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlin.random.Random
@@ -69,6 +70,12 @@ data class Location(
 )
 
 // UI States
+data class LoginState(
+    val isLoading: Boolean = false,
+    val userName: String = "",
+    val error: String? = null
+)
+
 data class CharactersListState(
     val isLoading: Boolean = false,
     val data: List<Character> = emptyList(),
@@ -153,12 +160,12 @@ class CharacterDb {
     )
 
     suspend fun getAllCharacters(): List<Character> {
-        delay(4000) // 4 segundos de loading
+        delay(100)
         return characters
     }
 
     suspend fun getCharacterById(id: Int): Character? {
-        delay(2000) // 2 segundos de loading
+        delay(100)
         return characters.find { it.id == id }
     }
 }
@@ -204,19 +211,67 @@ class LocationDb {
     )
 
     suspend fun getAllLocations(): List<Location> {
-        delay(4000) // 4 segundos de loading
+        delay(100)
         return locations
     }
 
     suspend fun getLocationById(id: Int): Location? {
-        delay(2000) // 2 segundos de loading
+        delay(100)
         return locations.find { it.id == id }
     }
 }
 
 // ViewModels
-class CharactersListViewModel : ViewModel() {
-    private val characterDb = CharacterDb()
+class LoginViewModel(
+    private val userRepository: UserRepository,
+    private val charactersRepository: CharactersRepository,
+    private val locationsRepository: LocationsRepository
+) : ViewModel() {
+    private val _state = MutableStateFlow(LoginState())
+    val state: StateFlow<LoginState> = _state.asStateFlow()
+
+    fun updateUserName(name: String) {
+        _state.value = _state.value.copy(userName = name, error = null)
+    }
+
+    suspend fun checkExistingSession(): String? {
+        return userRepository.userName.first()
+    }
+
+    fun login(onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            val userName = _state.value.userName.trim()
+
+            if (userName.isEmpty()) {
+                _state.value = _state.value.copy(error = "Por favor ingresa tu nombre")
+                return@launch
+            }
+
+            _state.value = _state.value.copy(isLoading = true, error = null)
+
+            try {
+                // Guardar nombre en DataStore
+                userRepository.saveUserName(userName)
+
+                // Sincronización inicial (4 segundos de delay)
+                charactersRepository.syncCharacters()
+                locationsRepository.syncLocations()
+
+                _state.value = _state.value.copy(isLoading = false)
+                onSuccess()
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    isLoading = false,
+                    error = "Error al iniciar sesión"
+                )
+            }
+        }
+    }
+}
+
+class CharactersListViewModel(
+    private val charactersRepository: CharactersRepository
+) : ViewModel() {
     private val _state = MutableStateFlow(CharactersListState())
     val state: StateFlow<CharactersListState> = _state.asStateFlow()
 
@@ -228,22 +283,29 @@ class CharactersListViewModel : ViewModel() {
         viewModelScope.launch {
             _state.value = CharactersListState(isLoading = true)
 
-            val characters = characterDb.getAllCharacters()
-            val randomNumber = Random.nextInt(1, 11)
+            try {
+                charactersRepository.getAllCharacters().collect { entities ->
+                    val randomNumber = Random.nextInt(1, 11)
 
-            if (randomNumber % 2 == 0) {
-                // Número par - mostrar datos
-                _state.value = CharactersListState(data = characters)
-            } else {
-                // Número impar - mostrar error
+                    if (randomNumber % 2 == 0) {
+                        _state.value = CharactersListState(
+                            data = entities.map { it.toModel() }
+                        )
+                    } else {
+                        _state.value = CharactersListState(hasError = true)
+                    }
+                }
+            } catch (e: Exception) {
                 _state.value = CharactersListState(hasError = true)
             }
         }
     }
 }
 
-class CharacterDetailViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
-    private val characterDb = CharacterDb()
+class CharacterDetailViewModel(
+    savedStateHandle: SavedStateHandle,
+    private val charactersRepository: CharactersRepository
+) : ViewModel() {
     private val _state = MutableStateFlow(CharacterDetailState())
     val state: StateFlow<CharacterDetailState> = _state.asStateFlow()
 
@@ -257,22 +319,27 @@ class CharacterDetailViewModel(savedStateHandle: SavedStateHandle) : ViewModel()
         viewModelScope.launch {
             _state.value = CharacterDetailState(isLoading = true)
 
-            val character = characterDb.getCharacterById(characterId)
-            val randomNumber = Random.nextInt(1, 11)
+            delay(2000)
 
-            if (randomNumber % 2 == 0) {
-                // Número par - mostrar datos
-                _state.value = CharacterDetailState(data = character)
-            } else {
-                // Número impar - mostrar error
+            try {
+                val characterEntity = charactersRepository.getCharacterById(characterId)
+                val randomNumber = Random.nextInt(1, 11)
+
+                if (randomNumber % 2 == 0 && characterEntity != null) {
+                    _state.value = CharacterDetailState(data = characterEntity.toModel())
+                } else {
+                    _state.value = CharacterDetailState(hasError = true)
+                }
+            } catch (e: Exception) {
                 _state.value = CharacterDetailState(hasError = true)
             }
         }
     }
 }
 
-class LocationsListViewModel : ViewModel() {
-    private val locationDb = LocationDb()
+class LocationsListViewModel(
+    private val locationsRepository: LocationsRepository
+) : ViewModel() {
     private val _state = MutableStateFlow(LocationsListState())
     val state: StateFlow<LocationsListState> = _state.asStateFlow()
 
@@ -284,22 +351,29 @@ class LocationsListViewModel : ViewModel() {
         viewModelScope.launch {
             _state.value = LocationsListState(isLoading = true)
 
-            val locations = locationDb.getAllLocations()
-            val randomNumber = Random.nextInt(1, 11)
+            try {
+                locationsRepository.getAllLocations().collect { entities ->
+                    val randomNumber = Random.nextInt(1, 11)
 
-            if (randomNumber % 2 == 0) {
-                // Número par - mostrar datos
-                _state.value = LocationsListState(data = locations)
-            } else {
-                // Número impar - mostrar error
+                    if (randomNumber % 2 == 0) {
+                        _state.value = LocationsListState(
+                            data = entities.map { it.toModel() }
+                        )
+                    } else {
+                        _state.value = LocationsListState(hasError = true)
+                    }
+                }
+            } catch (e: Exception) {
                 _state.value = LocationsListState(hasError = true)
             }
         }
     }
 }
 
-class LocationDetailViewModel(savedStateHandle: SavedStateHandle) : ViewModel() {
-    private val locationDb = LocationDb()
+class LocationDetailViewModel(
+    savedStateHandle: SavedStateHandle,
+    private val locationsRepository: LocationsRepository
+) : ViewModel() {
     private val _state = MutableStateFlow(LocationDetailState())
     val state: StateFlow<LocationDetailState> = _state.asStateFlow()
 
@@ -313,21 +387,50 @@ class LocationDetailViewModel(savedStateHandle: SavedStateHandle) : ViewModel() 
         viewModelScope.launch {
             _state.value = LocationDetailState(isLoading = true)
 
-            val location = locationDb.getLocationById(locationId)
-            val randomNumber = Random.nextInt(1, 11)
+            delay(2000)
 
-            if (randomNumber % 2 == 0) {
-                // Número par - mostrar datos
-                _state.value = LocationDetailState(data = location)
-            } else {
-                // Número impar - mostrar error
+            try {
+                val locationEntity = locationsRepository.getLocationById(locationId)
+                val randomNumber = Random.nextInt(1, 11)
+
+                if (randomNumber % 2 == 0 && locationEntity != null) {
+                    _state.value = LocationDetailState(data = locationEntity.toModel())
+                } else {
+                    _state.value = LocationDetailState(hasError = true)
+                }
+            } catch (e: Exception) {
                 _state.value = LocationDetailState(hasError = true)
             }
         }
     }
 }
 
+class ProfileViewModel(
+    private val userRepository: UserRepository
+) : ViewModel() {
+    private val _userName = MutableStateFlow<String?>(null)
+    val userName: StateFlow<String?> = _userName.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            userRepository.userName.collect { name ->
+                _userName.value = name
+            }
+        }
+    }
+
+    fun logout(onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            userRepository.logout()
+            onSuccess()
+        }
+    }
+}
+
 // Serializable destinations
+@Serializable
+object SplashDestination
+
 @Serializable
 object LoginDestination
 
@@ -352,6 +455,7 @@ object ProfileDestination
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         enableEdgeToEdge()
         setContent {
             Lab8Theme {
@@ -368,23 +472,61 @@ fun AppNavigation(
     modifier: Modifier = Modifier,
     navController: NavHostController = rememberNavController()
 ) {
+    val context = LocalContext.current
+    val dataStoreManager = remember { DataStoreManager(context) }
+    val database = remember { AppDatabase.getDatabase(context) }
+    val userRepository = remember { UserRepository(dataStoreManager) }
+    val charactersRepository = remember {
+        CharactersRepository(database.characterDao(), CharacterDb())
+    }
+    val locationsRepository = remember {
+        LocationsRepository(database.locationDao(), LocationDb())
+    }
+
     NavHost(
         navController = navController,
-        startDestination = LoginDestination,
+        startDestination = SplashDestination,
         modifier = modifier
     ) {
+        composable<SplashDestination> {
+            SplashScreen(
+                userRepository = userRepository,
+                onNavigateToLogin = {
+                    navController.navigate(LoginDestination) {
+                        popUpTo(SplashDestination) { inclusive = true }
+                    }
+                },
+                onNavigateToMain = {
+                    navController.navigate(MainDestination) {
+                        popUpTo(SplashDestination) { inclusive = true }
+                    }
+                }
+            )
+        }
+
         composable<LoginDestination> {
+            val viewModel = remember {
+                LoginViewModel(userRepository, charactersRepository, locationsRepository)
+            }
+
             LoginScreen(
+                viewModel = viewModel,
                 onStartClick = {
                     navController.navigate(MainDestination) {
-                        popUpTo<LoginDestination> { inclusive = true }
+                        popUpTo(LoginDestination) { inclusive = true }
                     }
+                },
+                onBackPressed = {
+                    (context as? Activity)?.finish()
                 }
             )
         }
 
         composable<MainDestination> {
             MainScreen(
+                userRepository = userRepository,
+                charactersRepository = charactersRepository,
+                locationsRepository = locationsRepository,
                 onLogout = {
                     navController.navigate(LoginDestination) {
                         popUpTo(0) { inclusive = true }
@@ -396,7 +538,36 @@ fun AppNavigation(
 }
 
 @Composable
-fun MainScreen(onLogout: () -> Unit) {
+fun SplashScreen(
+    userRepository: UserRepository,
+    onNavigateToLogin: () -> Unit,
+    onNavigateToMain: () -> Unit
+) {
+    LaunchedEffect(Unit) {
+        delay(1000)
+        val userName = userRepository.userName.first()
+        if (userName != null) {
+            onNavigateToMain()
+        } else {
+            onNavigateToLogin()
+        }
+    }
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator()
+    }
+}
+
+@Composable
+fun MainScreen(
+    userRepository: UserRepository,
+    charactersRepository: CharactersRepository,
+    locationsRepository: LocationsRepository,
+    onLogout: () -> Unit
+) {
     val navController = rememberNavController()
     val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -466,7 +637,10 @@ fun MainScreen(onLogout: () -> Unit) {
             modifier = Modifier.padding(paddingValues)
         ) {
             composable<CharactersListDestination> {
+                val viewModel = remember { CharactersListViewModel(charactersRepository) }
+
                 CharactersScreen(
+                    viewModel = viewModel,
                     onCharacterClick = { characterId ->
                         navController.navigate(CharacterDetailDestination(characterId))
                     },
@@ -478,8 +652,15 @@ fun MainScreen(onLogout: () -> Unit) {
 
             composable<CharacterDetailDestination> { backStackEntry ->
                 val args = backStackEntry.toRoute<CharacterDetailDestination>()
+                val viewModel = remember {
+                    CharacterDetailViewModel(
+                        SavedStateHandle(mapOf("characterId" to args.characterId)),
+                        charactersRepository
+                    )
+                }
+
                 CharacterDetailScreen(
-                    characterId = args.characterId,
+                    viewModel = viewModel,
                     onBackClick = {
                         navController.popBackStack()
                     }
@@ -487,7 +668,10 @@ fun MainScreen(onLogout: () -> Unit) {
             }
 
             composable<LocationsListDestination> {
+                val viewModel = remember { LocationsListViewModel(locationsRepository) }
+
                 LocationsScreen(
+                    viewModel = viewModel,
                     onLocationClick = { locationId ->
                         navController.navigate(LocationDetailDestination(locationId))
                     },
@@ -499,8 +683,15 @@ fun MainScreen(onLogout: () -> Unit) {
 
             composable<LocationDetailDestination> { backStackEntry ->
                 val args = backStackEntry.toRoute<LocationDetailDestination>()
+                val viewModel = remember {
+                    LocationDetailViewModel(
+                        SavedStateHandle(mapOf("locationId" to args.locationId)),
+                        locationsRepository
+                    )
+                }
+
                 LocationDetailScreen(
-                    locationId = args.locationId,
+                    viewModel = viewModel,
                     onBackClick = {
                         navController.popBackStack()
                     }
@@ -508,7 +699,10 @@ fun MainScreen(onLogout: () -> Unit) {
             }
 
             composable<ProfileDestination> {
+                val viewModel = remember { ProfileViewModel(userRepository) }
+
                 ProfileScreen(
+                    viewModel = viewModel,
                     onLogout = onLogout
                 )
             }
@@ -560,7 +754,7 @@ fun ErrorScreen(onRetry: () -> Unit) {
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Error al obtener listado de personajes.\nIntenta de nuevo",
+                text = "Error al obtener datos.\nIntenta de nuevo",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.error,
                 textAlign = TextAlign.Center
@@ -577,7 +771,17 @@ fun ErrorScreen(onRetry: () -> Unit) {
 }
 
 @Composable
-fun LoginScreen(onStartClick: () -> Unit) {
+fun LoginScreen(
+    viewModel: LoginViewModel,
+    onStartClick: () -> Unit,
+    onBackPressed: () -> Unit
+) {
+    val state by viewModel.state.collectAsState()
+
+    BackHandler {
+        onBackPressed()
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -593,22 +797,57 @@ fun LoginScreen(onStartClick: () -> Unit) {
             modifier = Modifier.size(200.dp)
         )
 
-        Spacer(modifier = Modifier.weight(1f))
-
-        Button(
-            onClick = onStartClick,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary
-            )
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                text = "Empezar",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium
+            OutlinedTextField(
+                value = state.userName,
+                onValueChange = { viewModel.updateUserName(it) },
+                label = { Text("Nombre") },
+                placeholder = { Text("Ingresa tu nombre") },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !state.isLoading,
+                isError = state.error != null,
+                singleLine = true
             )
+
+            if (state.error != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = state.error!!,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Button(
+                onClick = {
+                    viewModel.login(onStartClick)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                enabled = !state.isLoading,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                )
+            ) {
+                if (state.isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                } else {
+                    Text(
+                        text = "Iniciar sesión",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(32.dp))
@@ -624,9 +863,9 @@ fun LoginScreen(onStartClick: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CharactersScreen(
+    viewModel: CharactersListViewModel,
     onCharacterClick: (Int) -> Unit,
-    onBackPressed: () -> Unit,
-    viewModel: CharactersListViewModel = viewModel()
+    onBackPressed: () -> Unit
 ) {
     val state by viewModel.state.collectAsState()
 
@@ -735,9 +974,8 @@ fun CharacterItem(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CharacterDetailScreen(
-    characterId: Int,
-    onBackClick: () -> Unit,
-    viewModel: CharacterDetailViewModel = viewModel()
+    viewModel: CharacterDetailViewModel,
+    onBackClick: () -> Unit
 ) {
     val state by viewModel.state.collectAsState()
 
@@ -812,9 +1050,9 @@ fun CharacterDetailScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LocationsScreen(
+    viewModel: LocationsListViewModel,
     onLocationClick: (Int) -> Unit,
-    onBackPressed: () -> Unit,
-    viewModel: LocationsListViewModel = viewModel()
+    onBackPressed: () -> Unit
 ) {
     val state by viewModel.state.collectAsState()
 
@@ -912,9 +1150,8 @@ fun LocationItem(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LocationDetailScreen(
-    locationId: Int,
-    onBackClick: () -> Unit,
-    viewModel: LocationDetailViewModel = viewModel()
+    viewModel: LocationDetailViewModel,
+    onBackClick: () -> Unit
 ) {
     val state by viewModel.state.collectAsState()
 
@@ -982,7 +1219,12 @@ fun LocationDetailScreen(
 }
 
 @Composable
-fun ProfileScreen(onLogout: () -> Unit) {
+fun ProfileScreen(
+    viewModel: ProfileViewModel,
+    onLogout: () -> Unit
+) {
+    val userName by viewModel.userName.collectAsState()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1000,13 +1242,15 @@ fun ProfileScreen(onLogout: () -> Unit) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        DetailRow(label = "Nombre:", value = "Jorge Andrés Villeda Solís")
+        DetailRow(label = "Nombre:", value = userName ?: "Usuario")
         DetailRow(label = "Carné:", value = "24932")
 
         Spacer(modifier = Modifier.weight(1f))
 
         Button(
-            onClick = onLogout,
+            onClick = {
+                viewModel.logout(onLogout)
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp),
