@@ -49,7 +49,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
-import kotlin.random.Random
 
 // Data classes
 data class Character(
@@ -100,127 +99,6 @@ data class LocationDetailState(
     val hasError: Boolean = false
 )
 
-// Database classes
-class CharacterDb {
-    private val characters = listOf(
-        Character(
-            id = 1,
-            name = "Rick Sanchez",
-            status = "Alive",
-            species = "Human",
-            type = "",
-            gender = "Male",
-            image = "https://rickandmortyapi.com/api/character/avatar/1.jpeg"
-        ),
-        Character(
-            id = 2,
-            name = "Morty Smith",
-            status = "Alive",
-            species = "Human",
-            type = "",
-            gender = "Male",
-            image = "https://rickandmortyapi.com/api/character/avatar/2.jpeg"
-        ),
-        Character(
-            id = 3,
-            name = "Summer Smith",
-            status = "Alive",
-            species = "Human",
-            type = "",
-            gender = "Female",
-            image = "https://rickandmortyapi.com/api/character/avatar/3.jpeg"
-        ),
-        Character(
-            id = 4,
-            name = "Beth Smith",
-            status = "Alive",
-            species = "Human",
-            type = "",
-            gender = "Female",
-            image = "https://rickandmortyapi.com/api/character/avatar/4.jpeg"
-        ),
-        Character(
-            id = 5,
-            name = "Jerry Smith",
-            status = "Alive",
-            species = "Human",
-            type = "",
-            gender = "Male",
-            image = "https://rickandmortyapi.com/api/character/avatar/5.jpeg"
-        ),
-        Character(
-            id = 19,
-            name = "Abadango Cluster Princess",
-            status = "Alive",
-            species = "Alien",
-            type = "",
-            gender = "Female",
-            image = "https://rickandmortyapi.com/api/character/avatar/19.jpeg"
-        )
-    )
-
-    suspend fun getAllCharacters(): List<Character> {
-        delay(100)
-        return characters
-    }
-
-    suspend fun getCharacterById(id: Int): Character? {
-        delay(100)
-        return characters.find { it.id == id }
-    }
-}
-
-class LocationDb {
-    private val locations = listOf(
-        Location(
-            id = 1,
-            name = "Earth (C-137)",
-            type = "Planet",
-            dimension = "Dimension C-137"
-        ),
-        Location(
-            id = 3,
-            name = "Abadango",
-            type = "Cluster",
-            dimension = "unknown"
-        ),
-        Location(
-            id = 7,
-            name = "Citadel of Ricks",
-            type = "Space station",
-            dimension = "unknown"
-        ),
-        Location(
-            id = 8,
-            name = "Worldender's lair",
-            type = "Planet",
-            dimension = "unknown"
-        ),
-        Location(
-            id = 9,
-            name = "Anatomy Park",
-            type = "Microverse",
-            dimension = "Dimension C-137"
-        ),
-        Location(
-            id = 11,
-            name = "Interdimensional Cable",
-            type = "TV",
-            dimension = "unknown"
-        )
-    )
-
-    suspend fun getAllLocations(): List<Location> {
-        delay(100)
-        return locations
-    }
-
-    suspend fun getLocationById(id: Int): Location? {
-        delay(100)
-        return locations.find { it.id == id }
-    }
-}
-
 // ViewModels
 class LoginViewModel(
     private val userRepository: UserRepository,
@@ -253,16 +131,25 @@ class LoginViewModel(
                 // Guardar nombre en DataStore
                 userRepository.saveUserName(userName)
 
-                // Sincronización inicial (4 segundos de delay)
-                charactersRepository.syncCharacters()
-                locationsRepository.syncLocations()
+                // Sincronización inicial desde el API
+                val charactersSyncResult = charactersRepository.syncCharacters()
+                val locationsSyncResult = locationsRepository.syncLocations()
+
+                // Verificar si hubo errores
+                if (charactersSyncResult.isFailure || locationsSyncResult.isFailure) {
+                    _state.value = _state.value.copy(
+                        isLoading = false,
+                        error = "Error al sincronizar datos. Verifica tu conexión."
+                    )
+                    return@launch
+                }
 
                 _state.value = _state.value.copy(isLoading = false)
                 onSuccess()
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
                     isLoading = false,
-                    error = "Error al iniciar sesión"
+                    error = "Error al iniciar sesión: ${e.message}"
                 )
             }
         }
@@ -284,16 +171,23 @@ class CharactersListViewModel(
             _state.value = CharactersListState(isLoading = true)
 
             try {
-                charactersRepository.getAllCharacters().collect { entities ->
-                    val randomNumber = Random.nextInt(1, 11)
+                // Verificar si hay datos locales
+                val hasLocalData = charactersRepository.hasLocalData()
 
-                    if (randomNumber % 2 == 0) {
-                        _state.value = CharactersListState(
-                            data = entities.map { it.toModel() }
-                        )
-                    } else {
+                if (!hasLocalData) {
+                    // Si no hay datos, sincronizar desde API
+                    val syncResult = charactersRepository.syncCharacters()
+                    if (syncResult.isFailure) {
                         _state.value = CharactersListState(hasError = true)
+                        return@launch
                     }
+                }
+
+                // Obtener datos de Room (Offline First)
+                charactersRepository.getAllCharacters().collect { entities ->
+                    _state.value = CharactersListState(
+                        data = entities.map { it.toModel() }
+                    )
                 }
             } catch (e: Exception) {
                 _state.value = CharactersListState(hasError = true)
@@ -319,13 +213,13 @@ class CharacterDetailViewModel(
         viewModelScope.launch {
             _state.value = CharacterDetailState(isLoading = true)
 
-            delay(2000)
+            delay(500) // Pequeño delay para UX
 
             try {
+                // Obtener de Room (ya fue sincronizado en la lista)
                 val characterEntity = charactersRepository.getCharacterById(characterId)
-                val randomNumber = Random.nextInt(1, 11)
 
-                if (randomNumber % 2 == 0 && characterEntity != null) {
+                if (characterEntity != null) {
                     _state.value = CharacterDetailState(data = characterEntity.toModel())
                 } else {
                     _state.value = CharacterDetailState(hasError = true)
@@ -352,16 +246,23 @@ class LocationsListViewModel(
             _state.value = LocationsListState(isLoading = true)
 
             try {
-                locationsRepository.getAllLocations().collect { entities ->
-                    val randomNumber = Random.nextInt(1, 11)
+                // Verificar si hay datos locales
+                val hasLocalData = locationsRepository.hasLocalData()
 
-                    if (randomNumber % 2 == 0) {
-                        _state.value = LocationsListState(
-                            data = entities.map { it.toModel() }
-                        )
-                    } else {
+                if (!hasLocalData) {
+                    // Si no hay datos, sincronizar desde API
+                    val syncResult = locationsRepository.syncLocations()
+                    if (syncResult.isFailure) {
                         _state.value = LocationsListState(hasError = true)
+                        return@launch
                     }
+                }
+
+                // Obtener datos de Room (Offline First)
+                locationsRepository.getAllLocations().collect { entities ->
+                    _state.value = LocationsListState(
+                        data = entities.map { it.toModel() }
+                    )
                 }
             } catch (e: Exception) {
                 _state.value = LocationsListState(hasError = true)
@@ -387,13 +288,13 @@ class LocationDetailViewModel(
         viewModelScope.launch {
             _state.value = LocationDetailState(isLoading = true)
 
-            delay(2000)
+            delay(500) // Pequeño delay para UX
 
             try {
+                // Obtener de Room (ya fue sincronizado en la lista)
                 val locationEntity = locationsRepository.getLocationById(locationId)
-                val randomNumber = Random.nextInt(1, 11)
 
-                if (randomNumber % 2 == 0 && locationEntity != null) {
+                if (locationEntity != null) {
                     _state.value = LocationDetailState(data = locationEntity.toModel())
                 } else {
                     _state.value = LocationDetailState(hasError = true)
@@ -476,11 +377,16 @@ fun AppNavigation(
     val dataStoreManager = remember { DataStoreManager(context) }
     val database = remember { AppDatabase.getDatabase(context) }
     val userRepository = remember { UserRepository(dataStoreManager) }
+
+    // Crear instancia del API
+    val api = remember { RickAndMortyApi.create() }
+
+    // Crear repositorios con el API
     val charactersRepository = remember {
-        CharactersRepository(database.characterDao(), CharacterDb())
+        CharactersRepository(database.characterDao(), api)
     }
     val locationsRepository = remember {
-        LocationsRepository(database.locationDao(), LocationDb())
+        LocationsRepository(database.locationDao(), api)
     }
 
     NavHost(

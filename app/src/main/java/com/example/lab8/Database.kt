@@ -14,6 +14,9 @@ interface CharacterDao {
 
     @Query("SELECT * FROM characters WHERE id = :characterId")
     suspend fun getCharacterById(characterId: Int): CharacterEntity?
+
+    @Query("DELETE FROM characters")
+    suspend fun deleteAllCharacters()
 }
 
 @Dao
@@ -26,6 +29,9 @@ interface LocationDao {
 
     @Query("SELECT * FROM locations WHERE id = :locationId")
     suspend fun getLocationById(locationId: Int): LocationEntity?
+
+    @Query("DELETE FROM locations")
+    suspend fun deleteAllLocations()
 }
 
 @Database(
@@ -55,7 +61,10 @@ abstract class AppDatabase : RoomDatabase() {
     }
 }
 
-// Mappers
+// ============================================
+// Mappers: Entity <-> Model
+// ============================================
+
 fun Character.toEntity() = CharacterEntity(
     id = id,
     name = name,
